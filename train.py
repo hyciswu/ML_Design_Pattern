@@ -43,6 +43,9 @@ def train(model, data, epoch_look_back=5, max_epoch=100, percent_decrease=0, bat
     accu_train_sb = tg.cost.accuracy(y_train_sb, train_tf['y'])
     accu_valid_sb = tg.cost.accuracy(y_valid_sb, valid_tf['y'])
 
+    if save_dir and hvd.rank() == 0:
+        saver = tf.train.Saver()
+
     opt = tf.train.RMSPropOptimizer(learning_rate)
     opt = hvd.DistributedOptimizer(opt)
 
@@ -65,9 +68,6 @@ def train(model, data, epoch_look_back=5, max_epoch=100, percent_decrease=0, bat
         threads = tf.train.start_queue_runners(coord=coord)
         sess.run(init_op)
         bcast.run()
-
-        if save_dir and hvd.rank() == 0:
-            saver = tf.train.Saver()
 
         es = tg.EarlyStopper(max_epoch, epoch_look_back, percent_decrease)
         epoch = 0

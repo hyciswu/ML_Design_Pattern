@@ -19,7 +19,7 @@ class AllCNNPlusPredict(object):
         with self.graph.as_default():
 
             with tf.variable_scope(__MODEL_VARSCOPE__):
-                self.model = model.AllCNNPlus(nclass=10, h=28, w=28, c=1)
+                self.model = model.AllCNNPlus(nclass=nclass, h=h, w=w, c=c)
 
             self.sess = tf.Session()
             init_op = tf.group(tf.global_variables_initializer(),
