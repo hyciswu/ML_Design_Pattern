@@ -7,9 +7,10 @@ import horovod.tensorflow as hvd
 # import cifar10_allcnn
 from tensorflow.python.framework import ops
 from data import cifar10, mnist
-from model import AllCNN, ResDense, AllCNNPlus
+from model import *
 import logging, os
 from config import __MODEL_VARSCOPE__
+
 
 logging.basicConfig(format='%(module)s.%(funcName)s %(lineno)d:%(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -41,7 +42,9 @@ def train(model, data, epoch_look_back=5, max_epoch=100, percent_decrease=0, bat
         loss_train_sb = loss_train_sb + loss_reg
 
     accu_train_sb = tg.cost.accuracy(y_train_sb, train_tf['y'])
-    accu_valid_sb = tg.cost.accuracy(y_valid_sb, valid_tf['y'])
+    # accu_valid_sb = tg.cost.accuracy(y_valid_sb, valid_tf['y'])
+
+    tf.summary.scalar('train', accu_train_sb)
 
     if save_dir and hvd.rank() == 0:
         saver = tf.train.Saver()
@@ -67,8 +70,9 @@ def train(model, data, epoch_look_back=5, max_epoch=100, percent_decrease=0, bat
         coord = tf.train.Coordinator()
         threads = tf.train.start_queue_runners(coord=coord)
         sess.run(init_op)
+        train_writer = tf.summary.FileWriter( '{}/train'.format(logdir), sess.graph)
         bcast.run()
-
+        # merge = tf.summary.merge_all()
         es = tg.EarlyStopper(max_epoch, epoch_look_back, percent_decrease)
         epoch = 0
         best_valid_accu = 0
@@ -80,7 +84,9 @@ def train(model, data, epoch_look_back=5, max_epoch=100, percent_decrease=0, bat
             for i in range(0, n_train, batch_size):
                 pbar.update(i)
                 _, loss_train = sess.run([train_op, loss_train_sb])
+                # _, loss_train, merge_v = sess.run([train_op, loss_train_sb, merge])
                 ttl_train_loss += loss_train * batch_size
+                # train_writer.add_summary(merge_v, i)
             pbar.update(n_train)
             ttl_train_loss /= n_train
             print('')
@@ -116,11 +122,14 @@ def train(model, data, epoch_look_back=5, max_epoch=100, percent_decrease=0, bat
 if __name__ == '__main__':
     with tf.Graph().as_default():
         with tf.variable_scope(__MODEL_VARSCOPE__):
-            model = AllCNNPlus(nclass=10, h=28, w=28, c=1)
+            # model = AllCNNPlus(nclass=10, h=28, w=28, c=1)
+            # model = ResDense(nclass=10, h=28, w=28, c=1)
+            # model = DenseNetModel(nclass=10, h=28, w=28, c=1)
+            model = UNetModel(nclass=10, h=32, w=32, c=3)
 
         # timestamp
         ts = tg.utils.ts()
         save_dir='./save/{}'.format(ts)
-        train(model, mnist, epoch_look_back=5, max_epoch=100, percent_decrease=0,
+        train(model, cifar10, epoch_look_back=5, max_epoch=100, percent_decrease=0,
               batch_size=64, learning_rate=0.001, weight_regularize=True,
               save_dir=save_dir)
