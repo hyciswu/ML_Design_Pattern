@@ -12,29 +12,26 @@ class ResDense(BaseModel):
     @BaseModel.init_name_scope
     def __init__(self, nclass, h, w, c):
         layers = []
-        with tf.name_scope('blk1'):
-            identityblk = IdentityBlock(input_channels=c, input_shape=[h,w], nlayers=10)
-            layers.append(identityblk)
+        identityblk = IdentityBlock(input_channels=c, input_shape=[h,w], nlayers=10)
+        layers.append(identityblk)
 
-            layers.append(Conv2D(input_channels=c, num_filters=16, kernel_size=(3, 3), stride=(1, 1), padding='SAME'))
-            layers.append(RELU())
-            h, w = same(in_height=h, in_width=w, stride=(1,1), kernel_size=(3,3))
-            layers.append(BatchNormalization(input_shape=[h,w,16]))
+        layers.append(Conv2D(input_channels=c, num_filters=16, kernel_size=(3, 3), stride=(1, 1), padding='SAME'))
+        layers.append(RELU())
+        h, w = same(in_height=h, in_width=w, stride=(1,1), kernel_size=(3,3))
+        layers.append(BatchNormalization(input_shape=[h,w,16]))
 
-        with tf.name_scope('blk2'):
-            denseblk = DenseBlock(input_channels=16, input_shape=[h,w], growth_rate=4, nlayers=4)
-            layers.append(denseblk)
+        denseblk = DenseBlock(input_channels=16, input_shape=[h,w], growth_rate=4, nlayers=4)
+        layers.append(denseblk)
 
-            layers.append(Conv2D(input_channels=denseblk.output_channels, num_filters=32, kernel_size=(3, 3), stride=(2, 2), padding='SAME'))
-            layers.append(RELU())
-            h, w = same(in_height=h, in_width=w, stride=(2,2), kernel_size=(3,3))
-            layers.append(Dropout(0.5))
+        layers.append(Conv2D(input_channels=denseblk.output_channels, num_filters=32, kernel_size=(3, 3), stride=(2, 2), padding='SAME'))
+        layers.append(RELU())
+        h, w = same(in_height=h, in_width=w, stride=(2,2), kernel_size=(3,3))
+        layers.append(Dropout(0.5))
 
-        with tf.name_scope('blk3'):
-            layers.append(Conv2D(input_channels=32, num_filters=nclass, kernel_size=(1, 1), stride=(1, 1), padding='SAME'))
-            layers.append(RELU())
-            h, w = same(in_height=h, in_width=w, stride=(1,1), kernel_size=(1,1))
-            layers.append(BatchNormalization(input_shape=[h,w,nclass]))
+        layers.append(Conv2D(input_channels=32, num_filters=nclass, kernel_size=(1, 1), stride=(1, 1), padding='SAME'))
+        layers.append(RELU())
+        h, w = same(in_height=h, in_width=w, stride=(1,1), kernel_size=(1,1))
+        layers.append(BatchNormalization(input_shape=[h,w,nclass]))
 
         layers.append(AvgPooling(poolsize=(h, w), stride=(1,1), padding='VALID'))
         layers.append(Flatten())
