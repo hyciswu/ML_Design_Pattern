@@ -3,23 +3,23 @@ import tensorgraph as tg
 import numpy as np
 import tensorflow as tf
 import tensorflow.contrib as tc
-import horovod.tensorflow as hvd
+# import horovod.tensorflow as hvd
 # import cifar10_allcnn
 from tensorflow.python.framework import ops
 from data import cifar10, mnist
-from model import *
+from model_transfer import *
 import logging, os
-from config import __MODEL_VARSCOPE__
+__MODEL_VARSCOPE__ = 'model'
 
 
 logging.basicConfig(format='%(module)s.%(funcName)s %(lineno)d:%(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
-hvd.init()
+# hvd.init()
 
 def train(model, data, epoch_look_back=5, max_epoch=100, percent_decrease=0, batch_size=64,
-          learning_rate=0.001, weight_regularize=True, save_dir=None):
+          learning_rate=0.001, weight_regularize=True, save_dir=None, restore=False):
 
-    if save_dir and hvd.rank() == 0:
+    if save_dir:
         logdir = '{}/log'.format(save_dir)
         if not os.path.exists(logdir):
             os.makedirs(logdir)
@@ -46,11 +46,14 @@ def train(model, data, epoch_look_back=5, max_epoch=100, percent_decrease=0, bat
 
     tf.summary.scalar('train', accu_train_sb)
 
-    if save_dir and hvd.rank() == 0:
-        saver = tf.train.Saver()
 
-    opt = tf.train.RMSPropOptimizer(learning_rate)
-    opt = hvd.DistributedOptimizer(opt)
+    if save_dir:
+        sav_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=__MODEL_VARSCOPE__ + '/TemplateModel')
+        saver = tf.train.Saver(sav_vars)
+
+    # opt = tf.train.RMSPropOptimizer(learning_rate)
+    opt = tf.train.AdamOptimizer(learning_rate)
+    # opt = hvd.DistributedOptimizer(opt)
 
     # required for BatchNormalization layer
     update_ops = ops.get_collection(ops.GraphKeys.UPDATE_OPS)
@@ -59,19 +62,22 @@ def train(model, data, epoch_look_back=5, max_epoch=100, percent_decrease=0, bat
 
     init_op = tf.group(tf.global_variables_initializer(),
                        tf.local_variables_initializer())
-    bcast = hvd.broadcast_global_variables(0)
+    # bcast = hvd.broadcast_global_variables(0)
 
     # Pin GPU to be used to process local rank (one GPU per process)
     config = tf.ConfigProto()
     config.gpu_options.allow_growth = True
-    config.gpu_options.visible_device_list = str(hvd.local_rank())
+    # config.gpu_options.visible_device_list = str(hvd.local_rank())
 
     with tf.Session(config=config) as sess:
         coord = tf.train.Coordinator()
         threads = tf.train.start_queue_runners(coord=coord)
         sess.run(init_op)
+        if restore:
+            logger.info('restoring model')
+            saver.restore(sess, restore)
         train_writer = tf.summary.FileWriter( '{}/train'.format(logdir), sess.graph)
-        bcast.run()
+        # bcast.run()
         # merge = tf.summary.merge_all()
         es = tg.EarlyStopper(max_epoch, epoch_look_back, percent_decrease)
         epoch = 0
@@ -90,7 +96,7 @@ def train(model, data, epoch_look_back=5, max_epoch=100, percent_decrease=0, bat
             pbar.update(n_train)
             ttl_train_loss /= n_train
             print('')
-            logger.info('gpu {}: epoch {}, train loss {}'.format(hvd.rank(), epoch, ttl_train_loss))
+            logger.info('epoch {}, train loss {}'.format(epoch, ttl_train_loss))
 
             pbar = tg.ProgressBar(n_valid)
             ttl_valid_accu = 0
@@ -101,19 +107,19 @@ def train(model, data, epoch_look_back=5, max_epoch=100, percent_decrease=0, bat
             pbar.update(n_valid)
             ttl_valid_accu /= n_valid
             print('')
-            logger.info('gpu {}: epoch {}, valid accuracy {}'.format(hvd.rank(), epoch, ttl_valid_accu))
+            logger.info('epoch {}, valid accuracy {}'.format(epoch, ttl_valid_accu))
             if es.continue_learning(-ttl_valid_accu, epoch=epoch):
-                logger.info('gpu {}: best epoch last update: {}'.format(hvd.rank(), es.best_epoch_last_update))
-                logger.info('gpu {}: best valid last update: {}'.format(hvd.rank(), es.best_valid_last_update))
+                logger.info('best epoch last update: {}'.format(es.best_epoch_last_update))
+                logger.info('best valid last update: {}'.format(es.best_valid_last_update))
 
                 if ttl_valid_accu > best_valid_accu:
                     best_valid_accu = ttl_valid_accu
-                    if save_dir and hvd.rank() == 0:
+                    if save_dir:
                         save_path = saver.save(sess, model_dir + '/model.tf')
                         print("Best model saved in file: %s" % save_path)
 
             else:
-                logger.info('gpu {}: training done!'.format(hvd.rank()))
+                logger.info('training done!')
                 break
 
         coord.request_stop()
@@ -125,11 +131,17 @@ if __name__ == '__main__':
             # model = AllCNNPlus(nclass=10, h=32, w=32, c=3)
             # model = ResDense(nclass=10, h=32, w=32, c=3)
             # model = DenseNetModel(nclass=10, h=32, w=32, c=3)
-            model = UNetModel(nclass=10, h=32, w=32, c=3)
+            # model = UNetModel(nclass=10, h=32, w=32, c=3)
+            # model = OldModel(nclass=10, h=32, w=32, c=3)
+            model = NewModel(nclass=10, h=32, w=32, c=3)
 
         # timestamp
         ts = tg.utils.ts()
         save_dir='./save/{}'.format(ts)
+        # restore='./save/20180325_1947_13181444/model/model.tf'
+        # restore='./save/20180325_2028_02020360/model/model.tf'
+        restore = './save/20180328_1443_56750768/model/model.tf'
+        # restore = False
         train(model, cifar10, epoch_look_back=5, max_epoch=100, percent_decrease=0,
               batch_size=64, learning_rate=0.001, weight_regularize=True,
-              save_dir=save_dir)
+              save_dir=save_dir, restore=restore)
